@@ -1,93 +1,92 @@
-﻿using EmployeeAdminPortal.Data;
-using EmployeeAdminPortal.Models;
-using EmployeeAdminPortal.Models.Entities;
-using Microsoft.AspNetCore.Http;
+﻿using EmployeeAdminPortal.Models.DTOs;
+using EmployeeAdminPortal.Models.Responses;
+using EmployeeAdminPortal.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Threading.Tasks;
 
 namespace EmployeeAdminPortal.Controllers
 {
-    // localhost:xxxx/api/employees (because controller name is EmployeesController)
     [Route("api/[controller]")]
     [ApiController]
     public class EmployeesController : ControllerBase
     {
-        private readonly ApplicationDbContext dbContext;
+        private readonly IEmployeeService _employeeService;
 
-        public EmployeesController(ApplicationDbContext dbContext)
+        public EmployeesController(IEmployeeService employeeService)
         {
-            this.dbContext = dbContext;
+            _employeeService = employeeService;
         }
 
         [HttpGet]
-        public IActionResult GetAllEmployees()
+        public async Task<IActionResult> GetAllEmployees([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
         {
-            var allEmployees = dbContext.Employees.ToList();
-            return Ok(allEmployees);
+            if (pageNumber <= 0)
+            {
+                return BadRequest(new { message = "Page number must be greater than zero." });
+            }
+
+            if (pageSize <= 0)
+            {
+                return BadRequest(new { message = "Page size must be greater than zero." });
+            }
+
+            var pagedEmployees = await _employeeService.GetAllEmployeesAsync(pageNumber, pageSize);
+            return Ok(pagedEmployees);
         }
 
-        [HttpGet]
-        [Route("{id:guid}")]
-        public IActionResult GetEmployeeById(Guid id)
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetEmployeeById(Guid id)
         {
-            var employee = dbContext.Employees.FirstOrDefault(e => e.Id == id);
-            if (employee is null)
+            var employee = await _employeeService.GetEmployeeByIdAsync(id);
+            if (employee == null)
             {
                 return NotFound();
             }
-
             return Ok(employee);
-
         }
 
         [HttpPost]
-        public IActionResult AddEmployee(AddEmployeeDto addEmployeeDto)
+        public async Task<IActionResult> AddEmployee(AddEmployeeDto addEmployeeDto)
         {
-            var employeeEntity = new Employee
+            try
             {
-                Name = addEmployeeDto.Name,
-                Email = addEmployeeDto.Email,
-                Phone = addEmployeeDto.Phone,
-                Salary = addEmployeeDto.Salary
-            };
-
-            dbContext.Employees.Add(employeeEntity);
-            dbContext.SaveChanges();
-
-            return Ok(employeeEntity);
+                var employee = await _employeeService.AddEmployeeAsync(addEmployeeDto);
+                return CreatedAtAction(nameof(GetEmployeeById), new { id = employee.Id }, employee);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-
-        [HttpPut]
-        [Route("{id:guid}")]
-        public IActionResult UpdateEmployee(Guid id, UpdateEmployeeDto addEmployeeDto)
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> UpdateEmployee(Guid id, UpdateEmployeeDto updateEmployeeDto)
         {
-            var employee = dbContext.Employees.FirstOrDefault(e => e.Id == id);
-            if (employee is null)
+            try
+            {
+                var updatedEmployee = await _employeeService.UpdateEmployeeAsync(id, updateEmployeeDto);
+                if (updatedEmployee == null)
+                {
+                    return NotFound();
+                }
+                return Ok(updatedEmployee);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> DeleteEmployee(Guid id)
+        {
+            var result = await _employeeService.DeleteEmployeeAsync(id);
+            if (!result)
             {
                 return NotFound();
             }
-            employee.Name = addEmployeeDto.Name;
-            employee.Email = addEmployeeDto.Email;
-            employee.Phone = addEmployeeDto.Phone;
-            employee.Salary = addEmployeeDto.Salary;
-            dbContext.SaveChanges();
-            return Ok(employee);
+            return NoContent();
         }
-
-
-        [HttpDelete]
-        [Route("{id:guid}")]
-        public IActionResult DeleteEmployee(Guid id)
-        {
-            var employee = dbContext.Employees.Find(id);
-            if (employee is null)
-            {
-                return NotFound();
-            }
-            dbContext.Employees.Remove(employee);
-            dbContext.SaveChanges();
-            return Ok();
-        }
-
     }
 }
